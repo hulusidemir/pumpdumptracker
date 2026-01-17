@@ -63,7 +63,15 @@ class TelegramNotifier:
             'LOW': '⚡'
         }
         
+        confidence_text = {
+            'VERY_HIGH': 'ÇOK YÜKSEK',
+            'HIGH': 'YÜKSEK',
+            'MEDIUM': 'ORTA',
+            'LOW': 'DÜŞÜK'
+        }
+        
         emoji = confidence_emoji.get(signal.confidence, '⚡')
+        guven = confidence_text.get(signal.confidence, signal.confidence)
         
         # Rank prefix
         rank_text = f"#{rank} " if rank else ""
@@ -72,35 +80,72 @@ class TelegramNotifier:
         change_5m_emoji = "🟢" if signal.price_change_5m > 0 else "🔴"
         change_1h_emoji = "🟢" if signal.price_change_1h > 0 else "🔴"
         
+        # Signal translations
+        signal_names_tr = {
+            'EXTREME_VOLUME_SPIKE': '💥 Aşırı Hacim Patlaması',
+            'VOLUME_SPIKE': '📈 Hacim Artışı',
+            'ELEVATED_VOLUME': '📊 Yükselen Hacim',
+            'EXTREME_BUY_PRESSURE': '🐋 Aşırı Alım Baskısı',
+            'STRONG_BUY_PRESSURE': '💪 Güçlü Alım Baskısı',
+            'LARGE_BUY_ORDERS': '🎯 Büyük Alış Emirleri',
+            'STRONG_5M_MOMENTUM': '⚡ 5 Dakika Momentum',
+            'STRONG_15M_MOMENTUM': '⚡ 15 Dakika Momentum',
+            'STRONG_1H_MOMENTUM': '⚡ 1 Saat Momentum',
+            'MOMENTUM_ACCELERATION': '🚀 Hızlanan Momentum',
+            'BREAKOUT_PATTERN': '📊 Breakout Paterni',
+            'FUNDING_RATE_SPIKE': '💰 Funding Rate Atışı',
+            'OPEN_INTEREST_SURGE': '📊 Open Interest Artışı',
+            'LONG_BUILDUP': '🟢 Long Buildup (Yeni Longlar)',
+            'SHORT_COVERING': '💥 SHORT SQUEEZE!',
+            'SHORT_BUILDUP': '🔴 Short Buildup (Dikkat)',
+            'LONG_UNWINDING': '⚠️ Long Unwinding',
+            'EXTREME_TAKER_BUYING': '🔥 AŞIRI TAKERbuying',
+            'AGGRESSIVE_TAKER_BUYING': '💪 Agresif Taker Alımı',
+            'EXTREME_TAKER_SELLING': '🔻 Aşırı Taker Satışı',
+            'SHORT_SQUEEZE_SETUP': '💣 SHORT SQUEEZE HAZIRLIĞI!',
+            'HIGH_SHORT_INTEREST': '🎯 Yüksek Short Pozisyonu',
+            'OVERCROWDED_LONGS': '⚠️ Aşırı Long Kalabalığı',
+            'SHORT_LIQUIDATION_CASCADE': '🌊 SHORT TAHLİYE KASKADI!',
+            'LARGE_LIQUIDATION_ZONE': '⚡ Büyük Tasfiye Bölgesi'
+        }
+        
         # Build message
         message = f"""
-{emoji} <b>PUMP ALERT {rank_text}</b> {emoji}
+{emoji} <b>PUMP SINYALI {rank_text}</b> {emoji}
 
-<b>Symbol:</b> {signal.coin}
-<b>Score:</b> {signal.score:.1f}/100
-<b>Confidence:</b> {signal.confidence}
+<b>🪙 Coin:</b> {signal.coin}
+<b>⭐ Skor:</b> {signal.score:.1f}/100
+<b>🎯 Güven:</b> {guven}
 
-<b>📊 Price Action:</b>
-{change_5m_emoji} 5m: <b>{signal.price_change_5m:+.2f}%</b>
-{change_1h_emoji} 1h: <b>{signal.price_change_1h:+.2f}%</b>
-💰 Price: ${signal.price:,.4f}
+<b>💹 FİYAT HAREKETİ:</b>
+{change_5m_emoji} 5 dakika: <b>{signal.price_change_5m:+.2f}%</b>
+{change_1h_emoji} 1 saat: <b>{signal.price_change_1h:+.2f}%</b>
+💰 Fiyat: ${signal.price:,.4f}
 
-<b>📈 Volume:</b>
-24h Volume: ${signal.volume_24h:,.0f}
+<b>📊 HACİM:</b>
+24 saat: ${signal.volume_24h:,.0f}
 
-<b>🎯 Detected Signals:</b>
+<b>🔍 TESPİT EDİLEN SİNYALLER:</b>
 """
         
         # Add top signals
         top_signals = sorted(signal.signals, key=lambda x: x.strength, reverse=True)[:5]
         for sig in top_signals:
-            signal_emoji = "🚀" if sig.strength >= 80 else "⚡" if sig.strength >= 60 else "📊"
-            signal_name = sig.signal_type.replace('_', ' ').title()
-            message += f"{signal_emoji} {signal_name} ({sig.strength:.0f})\n"
+            signal_name = signal_names_tr.get(sig.signal_type, sig.signal_type.replace('_', ' ').title())
+            
+            # Add scenario details for OI signals
+            scenario = sig.details.get('scenario', '') if hasattr(sig, 'details') and sig.details else ''
+            if scenario:
+                message += f"• {signal_name}\n  └ {scenario} ({sig.strength:.0f} puan)\n"
+            else:
+                message += f"• {signal_name} ({sig.strength:.0f} puan)\n"
+        
+        # Add trading advice
+        message += f"\n<b>💡 CONFLUENCES:</b> {len(signal.signals)} adet sinyal bir arada!\n"
         
         # Add Bybit link
         bybit_url = f"https://www.bybit.com/trade/usdt/{signal.coin}"
-        message += f"\n<a href='{bybit_url}'>📱 Open on Bybit</a>"
+        message += f"\n<a href='{bybit_url}'>📱 Bybit'te Aç</a>"
         
         # Timestamp
         message += f"\n\n⏰ {datetime.now().strftime('%H:%M:%S')}"
@@ -112,19 +157,19 @@ class TelegramNotifier:
         Format market scan summary
         """
         if not signals:
-            return "✅ <b>Market Scan Complete</b>\n\nNo pump signals detected this scan."
+            return "✅ <b>Tarama Tamamlandı</b>\n\nBu taramada pump sinyali tespit edilmedi."
         
         message = f"""
-🔍 <b>Market Scan Complete</b>
+🔍 <b>Piyasa Taraması Tamamlandı</b>
 
-Found <b>{len(signals)}</b> pump signals in {scan_time:.1f}s
+<b>{len(signals)}</b> adet pump sinyali bulundu ({scan_time:.1f} saniye)
 
-<b>Top Signals:</b>
+<b>🏆 En Güçlü Sinyaller:</b>
 """
         
         for i, signal in enumerate(signals[:5], 1):
             emoji = "🔥" if signal.confidence == "VERY_HIGH" else "⚡"
-            message += f"{i}. {emoji} <b>{signal.coin}</b> - {signal.score:.0f} pts - {signal.price_change_5m:+.2f}% (5m)\n"
+            message += f"{i}. {emoji} <b>{signal.coin}</b> - {signal.score:.0f} puan - {signal.price_change_5m:+.2f}% (5dk)\n"
         
         return message
     
@@ -198,24 +243,24 @@ Found <b>{len(signals)}</b> pump signals in {scan_time:.1f}s
     async def send_startup_message(self):
         """Send bot startup notification"""
         message = """
-🤖 <b>Pump Detector Bot Started</b>
+🤖 <b>Pump Detector Bot Başlatıldı</b>
 
-Bot is now monitoring Bybit USDT perpetual futures for pump signals.
+Bot şimdi Bybit USDT perpetual futures piyasasını taramaya başladı.
 
-Will alert you when high-probability pump opportunities are detected.
+Yüksek olasılıklı pump fırsatları tespit edildiğinde sizi bilgilendireceğim.
 
-Stay tuned! 🚀
+Hazır olun! 🚀
 """
         await self.send_message(message)
     
     async def send_error_message(self, error: str):
         """Send error notification"""
         message = f"""
-⚠️ <b>Error Alert</b>
+⚠️ <b>Hata Bildirimi</b>
 
 {error}
 
-Bot will attempt to continue...
+Bot çalışmaya devam etmeye çalışıyor...
 """
         await self.send_message(message)
 

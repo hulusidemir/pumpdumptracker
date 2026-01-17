@@ -258,6 +258,108 @@ class BybitClient:
         
         return history
     
+    def get_long_short_ratio(self, symbol: str, period: str = "5min", limit: int = 20) -> Optional[Dict]:
+        """
+        Get long/short account ratio - retail sentiment
+        period: 5min, 15min, 30min, 1h, 4h, 1d
+        """
+        endpoint = "/v5/market/account-ratio"
+        params = {
+            'category': 'linear',
+            'symbol': symbol,
+            'period': period,
+            'limit': limit
+        }
+        
+        result = self._make_request(endpoint, params)
+        if not result or not result.get('list'):
+            return None
+        
+        # Get latest data
+        latest = result['list'][0] if result['list'] else None
+        if not latest:
+            return None
+        
+        buy_ratio = float(latest.get('buyRatio', 0))
+        sell_ratio = float(latest.get('sellRatio', 0))
+        
+        return {
+            'symbol': symbol,
+            'long_ratio': buy_ratio,
+            'short_ratio': sell_ratio,
+            'timestamp': int(latest.get('timestamp', 0)),
+            'sentiment': 'BULLISH' if buy_ratio > sell_ratio else 'BEARISH'
+        }
+    
+    def get_taker_buy_sell_ratio(self, symbol: str, period: str = "5min", limit: int = 20) -> Optional[Dict]:
+        """
+        Get taker buy/sell volume ratio - shows aggressive buying/selling
+        This is similar to CVD (Cumulative Volume Delta)
+        """
+        # Use recent klines to calculate taker buy/sell
+        klines = self.get_klines(symbol, '1', limit=60)
+        if not klines:
+            return None
+        
+        # Calculate taker buy volume from recent trades
+        # Approximation: if close > open, it's mostly buy pressure
+        total_volume = sum(k['volume'] for k in klines)
+        buy_volume = sum(k['volume'] for k in klines if k['close'] > k['open'])
+        sell_volume = total_volume - buy_volume
+        
+        buy_ratio = (buy_volume / total_volume * 100) if total_volume > 0 else 50
+        sell_ratio = 100 - buy_ratio
+        
+        return {
+            'symbol': symbol,
+            'taker_buy_ratio': buy_ratio,
+            'taker_sell_ratio': sell_ratio,
+            'taker_buy_volume': buy_volume,
+            'taker_sell_volume': sell_volume,
+            'pressure': 'BUY' if buy_ratio > 55 else 'SELL' if buy_ratio < 45 else 'NEUTRAL'
+        }
+    
+    def get_liquidations_estimate(self, symbol: str) -> Optional[Dict]:
+        """
+        Estimate liquidation zones using order book and OI data
+        Note: Bybit doesn't provide direct liquidation data via public API
+        We estimate based on open interest and price levels
+        """
+        try:
+            ticker = self.get_ticker_data(symbol)
+            orderbook = self.get_orderbook(symbol, limit=100)
+            
+            if not ticker or not orderbook:
+                return None
+            
+            current_price = ticker['price']
+            oi_value = ticker['open_interest_value']
+            
+            # Estimate liquidation zones (simplified)
+            # Long liquidations typically 2-5% below current price
+            # Short liquidations typically 2-5% above current price
+            
+            long_liq_price = current_price * 0.97  # -3% for leveraged longs
+            short_liq_price = current_price * 1.03  # +3% for leveraged shorts
+            
+            # Estimate liquidation amounts (rough approximation)
+            estimated_long_liq = oi_value * 0.3  # Assume 30% are longs near liquidation
+            estimated_short_liq = oi_value * 0.3  # Assume 30% are shorts near liquidation
+            
+            return {
+                'symbol': symbol,
+                'current_price': current_price,
+                'long_liquidation_price': long_liq_price,
+                'short_liquidation_price': short_liq_price,
+                'estimated_long_liq_volume': estimated_long_liq,
+                'estimated_short_liq_volume': estimated_short_liq,
+                'warning': 'Estimated values - not exact liquidation data'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error estimating liquidations for {symbol}: {e}")
+            return None
+    
     def get_comprehensive_data(self, symbol: str) -> Optional[Dict]:
         """
         Get all data needed for pump detection in one call
@@ -310,6 +412,15 @@ class BybitClient:
             oi_change_pct = ((oi_current - oi_1h_ago) / oi_1h_ago * 100) if oi_1h_ago > 0 else 0
             oi_volume_ratio = oi_current / ticker['volume_24h'] if ticker['volume_24h'] > 0 else 0
             
+            # 7. Long/Short Ratio
+            long_short_data = self.get_long_short_ratio(symbol)
+            
+            # 8. Taker Buy/Sell Ratio
+            taker_data = self.get_taker_buy_sell_ratio(symbol)
+            
+            # 9. Liquidation Estimates
+            liquidation_data = self.get_liquidations_estimate(symbol)
+            
             # Prepare comprehensive data structure
             data = {
                 'symbol': symbol,
@@ -335,6 +446,17 @@ class BybitClient:
                 'oi_volume_ratio': oi_volume_ratio,
                 'prices_history': [k['close'] for k in klines_5m],
                 'volumes_history': [k['volume'] for k in klines_5m],
+                # New advanced metrics
+                'long_ratio': long_short_data['long_ratio'] if long_short_data else 50,
+                'short_ratio': long_short_data['short_ratio'] if long_short_data else 50,
+                'sentiment': long_short_data['sentiment'] if long_short_data else 'NEUTRAL',
+                'taker_buy_ratio': taker_data['taker_buy_ratio'] if taker_data else 50,
+                'taker_sell_ratio': taker_data['taker_sell_ratio'] if taker_data else 50,
+                'taker_pressure': taker_data['pressure'] if taker_data else 'NEUTRAL',
+                'long_liq_price': liquidation_data['long_liquidation_price'] if liquidation_data else 0,
+                'short_liq_price': liquidation_data['short_liquidation_price'] if liquidation_data else 0,
+                'est_long_liq_volume': liquidation_data['estimated_long_liq_volume'] if liquidation_data else 0,
+                'est_short_liq_volume': liquidation_data['estimated_short_liq_volume'] if liquidation_data else 0,
                 'timestamp': datetime.now()
             }
             
