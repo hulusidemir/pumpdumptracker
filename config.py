@@ -25,12 +25,12 @@ CONFIG: Dict = {
     'max_workers': int(os.getenv('MAX_WORKERS', '10')),  # parallel processing
     
     # Filtering Thresholds
-    'min_volume_24h': float(os.getenv('MIN_VOLUME_24H', '500000')),  # $500k minimum
+    'min_volume_24h': float(os.getenv('MIN_VOLUME_24H', '2000000')),  # $2M minimum - Filter out low liquidity coins
     'min_price_change_5m': float(os.getenv('MIN_PRICE_CHANGE_5M', '1.0')),  # 1%
     'max_price': float(os.getenv('MAX_PRICE', '100000')),  # Max coin price
     
     # Detection Thresholds (Fine-tuned for high accuracy)
-    'min_score': float(os.getenv('MIN_SCORE', '70')),  # Minimum pump score to alert
+    'min_score': float(os.getenv('MIN_SCORE', '80')),  # Minimum pump score to alert - Higher quality signals
     
     # Notification Settings
     'max_notifications_per_scan': int(os.getenv('MAX_NOTIFICATIONS', '5')),
