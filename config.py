@@ -31,6 +31,8 @@ CONFIG: Dict = {
     
     # Detection Thresholds (Fine-tuned for high accuracy)
     'min_score': float(os.getenv('MIN_SCORE', '80')),  # Minimum pump score to alert - Higher quality signals
+    'min_confluence': int(os.getenv('MIN_CONFLUENCE', '3')),  # Minimum number of signals required
+    'require_volume_spike': os.getenv('REQUIRE_VOLUME_SPIKE', 'true').lower() == 'true',  # Must have volume spike
     
     # Notification Settings
     'max_notifications_per_scan': int(os.getenv('MAX_NOTIFICATIONS', '5')),

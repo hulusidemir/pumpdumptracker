@@ -70,6 +70,7 @@ class MarketScanner:
         """
         Quick filter to reduce symbols to scan in depth
         Only process coins showing early signs of movement
+        STRICTER: Higher thresholds for elite signals only
         """
         filtered = []
         
@@ -80,15 +81,20 @@ class MarketScanner:
                 price = ticker.get('price', 0)
                 price_change_24h = ticker.get('price_change_24h', 0)
                 
-                # Basic filters
+                # Basic filters (STRICTER)
                 if volume_24h < self.filter_thresholds['min_volume_24h']:
                     continue
                 
                 if price > self.filter_thresholds['max_price']:
                     continue
                 
-                # Look for any signs of movement
-                if abs(price_change_24h) > 5.0:  # 5% move in 24h
+                # Look for stronger signs of movement (STRICTER)
+                if abs(price_change_24h) > 8.0:  # 8% move in 24h (was 5%)
+                    filtered.append(symbol)
+                    continue
+                
+                # High volume with moderate movement
+                if volume_24h > self.filter_thresholds['min_volume_24h'] * 2 and abs(price_change_24h) > 3.0:
                     filtered.append(symbol)
                     continue
                 

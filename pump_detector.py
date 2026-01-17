@@ -63,10 +63,10 @@ class PumpDetector:
         
         # Critical thresholds for pump detection (STRICTER)
         self.thresholds = {
-            'volume_spike_multiplier': 5.0,  # 5x normal volume (was 3x)
-            'volume_extreme_multiplier': 8.0,  # 8x for extreme (was 5x)
-            'price_momentum_5m': 3.0,  # 3% in 5 minutes (was 2%)
-            'price_momentum_15m': 7.0,  # 7% in 15 minutes (was 5%)
+            'volume_spike_multiplier': 6.0,  # 6x normal volume (STRICTER)
+            'volume_extreme_multiplier': 10.0,  # 10x for extreme (ELITE)
+            'price_momentum_5m': 4.0,  # 4% in 5 minutes (STRICTER)
+            'price_momentum_15m': 8.0,  # 8% in 15 minutes (STRICTER)
             'order_book_imbalance': 3.0,  # 3:1 buy/sell ratio (was 2:1)
             'order_book_extreme': 5.0,  # 5:1 for extreme (was 3.5:1)
             'large_order_threshold': 200000,  # $200k orders (was $100k)
@@ -661,6 +661,34 @@ class PumpDetector:
             
             # Calculate final score
             if not signals:
+                return None
+            
+            # ELITE FILTER: Require minimum confluence
+            min_confluence = self.config.get('min_confluence', 3)
+            if len(signals) < min_confluence:
+                return None
+            
+            # ELITE FILTER: Must have volume spike (core requirement)
+            require_volume = self.config.get('require_volume_spike', True)
+            if require_volume:
+                has_volume_signal = any(s.signal_type in ['EXTREME_VOLUME_SPIKE', 'VOLUME_SPIKE'] 
+                                       for s in signals)
+                if not has_volume_signal:
+                    return None
+            
+            # ELITE FILTER: Must have at least ONE strong bullish signal
+            strong_signals = ['SHORT_COVERING', 'LONG_BUILDUP', 'EXTREME_TAKER_BUYING', 
+                            'SHORT_SQUEEZE_SETUP', 'SHORT_LIQUIDATION_CASCADE',
+                            'EXTREME_BUY_PRESSURE', 'MOMENTUM_ACCELERATION']
+            has_strong_signal = any(s.signal_type in strong_signals for s in signals)
+            if not has_strong_signal:
+                return None
+            
+            # ELITE FILTER: Reject if too many bearish signals
+            bearish_signals = ['SHORT_BUILDUP', 'LONG_UNWINDING', 'EXTREME_TAKER_SELLING', 
+                             'OVERCROWDED_LONGS']
+            bearish_count = sum(1 for s in signals if s.signal_type in bearish_signals)
+            if bearish_count >= 2:  # Too much bearish confluence
                 return None
             
             score, confidence = self.calculate_confluence_score(signals)
